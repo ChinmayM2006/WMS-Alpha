@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>WMS Dashboard</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+</head>
+<body>
+    <header class="header">
+        <div>
+            <h1>Warehouse Management System</h1>
+            <p class="subtitle">Local WMS demo with rack layout, SKU ops, and routing</p>
+        </div>
+        <form action="{{ url_for('toggle_mode') }}" method="post" class="inline-form">
+            <button type="submit">Mode: {{ mode }} (toggle)</button>
+        </form>
+    </header>
+
+    {% with messages = get_flashed_messages() %}
+    {% if messages %}
+    <section class="flash">
+        {% for message in messages %}
+        <div class="flash-item">{{ message }}</div>
+        {% endfor %}
+    </section>
+    {% endif %}
+    {% endwith %}
+
+    <section class="panel">
+        <h2>Rack Layout</h2>
+        <div class="rack-grid">
+            {% for row in layout %}
+            <div class="rack-row">
+                {% for rack in row %}
+                <div class="rack">
+                    <div class="rack-header">
+                        <div class="rack-code">{{ rack.info.code }}</div>
+                        <div class="rack-zone">{{ rack.info.zone }}</div>
+                    </div>
+                    <div class="rack-slots">
+                        {% for shelf_num in [1,2,3] %}
+                        <div class="shelf-row">
+                            {% for slot in rack.shelves[shelf_num] %}
+                            <div class="slot {{ 'occupied' if slot.occupied else 'free' }}" title="S{{ shelf_num }}-{{ '%02d'|format(slot.slot) }}"></div>
+                            {% endfor %}
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% endfor %}
+        </div>
+    </section>
+
+    <section class="panel">
+        <h2>SKU Management</h2>
+        <div class="forms">
+            <form action="{{ url_for('add_sku') }}" method="post" class="card">
+                <h3>Add New SKU</h3>
+                <p class="hint">SKU must exist in the master catalog.</p>
+                <label>SKU ID<input name="sku_id" required></label>
+                <label>Name<input name="name" required></label>
+                <label>Quantity<input name="quantity" type="number" min="1" value="1" required></label>
+                <label>Size
+                    <select name="size" required>
+                        <option value="S">S</option>
+                        <option value="M">M</option>
+                        <option value="L">L</option>
+                    </select>
+                </label>
+                <button type="submit">Add and Auto-Assign</button>
+            </form>
+
+            <form action="{{ url_for('receive_stock_route') }}" method="post" class="card">
+                <h3>Receive Stock</h3>
+                <p class="hint">Use this for existing SKUs.</p>
+                <label>SKU ID<input name="sku_id" required></label>
+                <label>Quantity<input name="quantity" type="number" min="1" value="1" required></label>
+                <label>Destination
+                    <select name="destination" required>
+                        <option value="docked">Dock (staging)</option>
+                        <option value="stored">Storage (auto-assign)</option>
+                    </select>
+                </label>
+                <button type="submit">Receive</button>
+            </form>
+
+            <form action="{{ url_for('putaway_docked_route') }}" method="post" class="card">
+                <h3>Putaway Docked</h3>
+                <p class="hint">Leave fields blank to put away all docked units.</p>
+                <label>SKU ID (optional)<input name="sku_id"></label>
+                <label>Quantity (optional)<input name="quantity" type="number" min="1"></label>
+                <button type="submit">Putaway</button>
+            </form>
+
+            <form action="{{ url_for('delete_sku_route') }}" method="post" class="card">
+                <h3>Delete SKU</h3>
+                <label>SKU ID<input name="sku_id" required></label>
+                <button type="submit">Delete</button>
+            </form>
+
+            <form action="{{ url_for('pick_sku_route') }}" method="post" class="card">
+                <h3>Pick SKU</h3>
+                <label>SKU ID<input name="sku_id" required></label>
+                <label>Quantity<input name="quantity" type="number" min="1" value="1" required></label>
+                <button type="submit">Pick (FIFO/LIFO)</button>
+            </form>
+
+            <form action="{{ url_for('pick_list_route') }}" method="post" class="card">
+                <h3>Pick List</h3>
+                <label>SKU_ID:QTY per line
+                    <textarea name="pick_list" rows="6" placeholder="SKU-1001:2&#10;SKU-1004:1"></textarea>
+                </label>
+                <button type="submit">Pick List and Optimize Route</button>
+            </form>
+
+            <form action="{{ url_for('ship_picked_route') }}" method="post" class="card">
+                <h3>Ship Picked</h3>
+                <p>Move all picked units to shipped and free slots.</p>
+                <button type="submit">Ship Picked Units</button>
+            </form>
+        </div>
+    </section>
+
+    <section class="panel">
+        <h2>Live Inventory</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>SKU ID</th>
+                    <th>Name</th>
+                    <th>Size</th>
+                    <th>Qty</th>
+                    <th>Status (Docked/Stored/Picked)</th>
+                    <th>Slots (Stored)</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in inventory %}
+                <tr>
+                    <td>{{ item.sku_id }}</td>
+                    <td>{{ item.name }}</td>
+                    <td>{{ item.size }}</td>
+                    <td>{{ item.qty }}</td>
+                    <td>{{ item.docked }}/{{ item.stored }}/{{ item.picked }}</td>
+                    <td>
+                        {% if item.slots %}
+                            {{ item.slots[:6]|join(', ') }}{% if item.slots|length > 6 %}…{% endif %}
+                        {% else %}
+                            -
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </section>
+
+    <section class="panel">
+        <h2>Recent Activity</h2>
+        {% if activity %}
+        <table class="activity-table">
+            <thead>
+                <tr>
+                    <th>Time</th>
+                    <th>SKU</th>
+                    <th>Name</th>
+                    <th>From</th>
+                    <th>To</th>
+                    <th>Slot</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in activity %}
+                <tr>
+                    <td>{{ row.moved_at }}</td>
+                    <td>{{ row.sku_id }}</td>
+                    <td>{{ row.name }}</td>
+                    <td>{{ row.from_status }}</td>
+                    <td>{{ row.to_status }}</td>
+                    <td>{{ row.slot }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <p>No activity logged yet.</p>
+        {% endif %}
+    </section>
+
+    <section class="panel">
+        <h2>Route Optimization</h2>
+        {% if last_route %}
+        <ol class="route-list">
+            {% for step in last_route %}
+            <li>{{ step }}</li>
+            {% endfor %}
+        </ol>
+        {% else %}
+        <p>No route generated yet. Use Pick SKU or Pick List.</p>
+        {% endif %}
+    </section>
+</body>
+</html>
